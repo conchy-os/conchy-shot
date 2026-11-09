@@ -1,0 +1,22 @@
+// Conchy Shot Configuration Example (~/.config/conchy/shot.kdl)
+
+// Multi-monitor mode:
+// - "unified": Single continuous canvas across all monitors (default)
+// - "per-output": Confine selection to the monitor where the cursor starts
+multi-monitor "unified"
+
+// Screenshot file path template (strftime format)
+save-path "~/Pictures/Screenshots/Screenshot_%Y-%m-%d_%H-%M-%S.png"
+
+// Automatically copy to clipboard when saving
+copy-to-clipboard-on-save true
+
+// UI Preferences
+ui {
+    // Show floating radial action ring around the selection
+    ring-menu true
+    // Theme: "tokyo-night" (default), "catppuccin-mocha", "nord", "gruvbox"
+    theme "catppuccin-mocha"
+    // Default annotation stroke thickness in pixels
+    stroke-width 3.5
+}

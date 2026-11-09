@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::{borrow::Cow, mem, ptr::NonNull};
 
 use anyhow::{Context, Result};
@@ -5,20 +7,19 @@ use bytemuck::{Pod, Zeroable};
 use raw_window_handle::{
     RawDisplayHandle, RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle,
 };
-use smithay_client_toolkit::shm::{Shm, slot::SlotPool};
-use tracing::warn;
+use smithay_client_toolkit::shm::{slot::SlotPool, Shm};
 use wayland_client::{
-    Connection, Proxy,
     protocol::{wl_shm, wl_surface},
+    Connection, Proxy,
 };
 use wgpu::util::DeviceExt;
 
 use crate::{
     geometry::{Rect, Size},
     render::{
-        DIMENSIONS_MAX_HEIGHT, DIMENSIONS_MAX_WIDTH, HANDLE_SIZE, PanelAssets, PixelSurface,
         dimensions_label_position, paint_background, paint_dimensions, paint_masks_and_border,
-        paint_panel, panel_location, render_dimensions_label,
+        paint_panel, panel_location, render_dimensions_label, DIMENSIONS_MAX_HEIGHT,
+        DIMENSIONS_MAX_WIDTH, HANDLE_SIZE, PanelAssets, PixelSurface,
     },
     state::SelectionModel,
     theme::Theme,
@@ -35,6 +36,7 @@ pub struct RendererOutputInit {
     pub without_pointer: PixelSurface,
 }
 
+#[allow(dead_code)]
 pub(crate) enum OverlayRenderer {
     Wgpu(WgpuRenderer),
     Shm(ShmRenderer),
@@ -42,20 +44,13 @@ pub(crate) enum OverlayRenderer {
 
 impl OverlayRenderer {
     pub fn new(
-        conn: &Connection,
+        _conn: &Connection,
         shm: &Shm,
         outputs: Vec<RendererOutputInit>,
         panels: PanelAssets,
         theme: Theme,
     ) -> Result<Self> {
-        match WgpuRenderer::new(conn, &outputs, panels.clone(), theme.clone()) {
-            Ok(renderer) => Ok(Self::Wgpu(renderer)),
-            Err(err) => {
-                warn!("failed to initialize wgpu overlay renderer: {err:#}");
-                warn!("falling back to cairo/shm overlay renderer");
-                Ok(Self::Shm(ShmRenderer::new(shm, outputs, panels, theme)?))
-            }
-        }
+        Ok(Self::Shm(ShmRenderer::new(shm, outputs, panels, theme)?))
     }
 
     pub fn resize_output(
@@ -168,6 +163,16 @@ impl ShmRenderer {
                 if let Some(sel) = model.selection_on_output(index) {
                     let label = render_dimensions_label(sel.width, sel.height, &self.theme)?;
                     paint_dimensions(&cr, &label, sel, output.logical_size)?;
+                }
+
+                for ann in model.annotations_on_output(index) {
+                    let _ = ann.paint(&cr);
+                }
+
+                if index == model.selected_output_index() {
+                    if let Some(ring) = &model.ring_menu {
+                        let _ = ring.paint(&cr, &self.theme, model.active_tool, model.current_color);
+                    }
                 }
             }
 

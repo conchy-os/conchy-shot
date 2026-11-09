@@ -43,6 +43,7 @@ pub struct OverlayResult {
     pub region: Rect,
     pub show_pointer: bool,
     pub write_to_disk: bool,
+    pub annotations: Vec<crate::annotation::Annotation>,
 }
 
 pub fn select_region(
@@ -154,7 +155,14 @@ pub fn select_region(
         app.panels.clone(),
         theme,
     )?);
-    app.model = Some(SelectionModel::new(model_outputs, 0, show_pointer));
+    app.model = Some(SelectionModel::with_mode(
+        model_outputs,
+        0,
+        show_pointer,
+        app.config.multi_monitor,
+        app.config.ring_menu,
+        app.config.stroke_width,
+    ));
     app.overlays = matched;
 
     while app.exit.is_none() {
@@ -232,6 +240,7 @@ impl OverlayApp {
                 region: model.capture_region(),
                 show_pointer: model.show_pointer,
                 write_to_disk: false,
+                annotations: model.annotations.clone(),
             }));
             return;
         }
@@ -242,8 +251,70 @@ impl OverlayApp {
                 region: model.capture_region(),
                 show_pointer: model.show_pointer,
                 write_to_disk: true,
+                annotations: model.annotations.clone(),
             }));
             return;
+        }
+        if matches_binding(&keymap.undo, keysym, self.modifiers) {
+            model.undo();
+            self.dirty = true;
+            return;
+        }
+
+        // Tool hotkeys (Flameshot UX: a, r, p, b, s, t, v, c)
+        if !self.modifiers.ctrl && !self.modifiers.alt && !self.modifiers.logo {
+            use smithay_client_toolkit::seat::keyboard::Keysym as K;
+            match keysym {
+                K::a | K::A => {
+                    model.active_tool = crate::annotation::Tool::Arrow;
+                    model.rebuild_ring_menu();
+                    self.dirty = true;
+                    return;
+                }
+                K::r | K::R => {
+                    model.active_tool = crate::annotation::Tool::Rect;
+                    model.rebuild_ring_menu();
+                    self.dirty = true;
+                    return;
+                }
+                K::p | K::P if !self.modifiers.shift => {
+                    model.active_tool = crate::annotation::Tool::Pencil;
+                    model.rebuild_ring_menu();
+                    self.dirty = true;
+                    return;
+                }
+                K::b | K::B => {
+                    model.active_tool = crate::annotation::Tool::Blur;
+                    model.rebuild_ring_menu();
+                    self.dirty = true;
+                    return;
+                }
+                K::s | K::S => {
+                    model.active_tool = crate::annotation::Tool::Step;
+                    model.rebuild_ring_menu();
+                    self.dirty = true;
+                    return;
+                }
+                K::t | K::T => {
+                    model.active_tool = crate::annotation::Tool::Text;
+                    model.rebuild_ring_menu();
+                    self.dirty = true;
+                    return;
+                }
+                K::v | K::V => {
+                    model.active_tool = crate::annotation::Tool::Select;
+                    model.rebuild_ring_menu();
+                    self.dirty = true;
+                    return;
+                }
+                K::c | K::C => {
+                    model.cycle_color();
+                    model.rebuild_ring_menu();
+                    self.dirty = true;
+                    return;
+                }
+                _ => {}
+            }
         }
         if matches_binding(&keymap.move_left, keysym, self.modifiers) {
             model.move_left();
@@ -323,7 +394,11 @@ impl OverlayApp {
                     region: model.capture_region(),
                     show_pointer: model.show_pointer,
                     write_to_disk: true,
+                    annotations: model.annotations.clone(),
                 }));
+            }
+            PointerUpOutcome::Cancel => {
+                self.exit = Some(None);
             }
         }
     }

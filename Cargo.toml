@@ -1,15 +1,22 @@
 [package]
-name = "snappers"
+name = "conchy-shot"
 version = "0.1.0"
-edition = "2024"
-description = "Standalone Wayland screenshot tool with a niri-style selection UI"
+edition = "2021"
+description = "Modern Wayland screenshot and annotation tool with unified multi-monitor canvas, written in pure Rust for Conchy OS"
 readme = "README.md"
-documentation = "https://docs.rs/snappers"
-homepage = "https://github.com/OneNoted/snappers"
-repository = "https://github.com/OneNoted/snappers"
-license = "MIT"
-keywords = ["wayland", "screenshot", "wlroots"]
-categories = ["command-line-utilities"]
+homepage = "https://github.com/conchy-os/conchy-shot"
+repository = "https://github.com/conchy-os/conchy-shot"
+license = "GPL-3.0-or-later"
+keywords = ["wayland", "screenshot", "wlroots", "annotation", "conchy"]
+categories = ["command-line-utilities", "graphics"]
+
+[[bin]]
+name = "conchy-shot"
+path = "src/main.rs"
+
+[lib]
+name = "conchy_shot"
+path = "src/lib.rs"
 
 [dependencies]
 anyhow = "1.0.100"
@@ -19,6 +26,7 @@ chrono = { version = "0.4.42", default-features = false, features = ["clock"] }
 clap = { version = "4.5.60", features = ["derive"] }
 directories = "6.0.0"
 image = "0.25.8"
+kdl = "4.6"
 libwayshot = "0.7.3"
 notify-rust = { version = "4.11.7", default-features = false, features = ["d"] }
 pango = { version = "0.21.3", features = ["v1_44"] }
@@ -33,3 +41,4 @@ tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 wayland-client = "0.31.11"
 wgpu = "29.0.0"
 wl-clipboard-rs = "0.9.3"
+xkeysym = "0.2.1"
