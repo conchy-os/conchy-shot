@@ -267,7 +267,7 @@ impl SelectionModel {
             Tool::Blur => {
                 self.in_progress_annotation = Some(Annotation::Blur {
                     rect: Rect::new(global_point.x, global_point.y, 1, 1),
-                    cell_size: 10,
+                    cell_size: 14,
                 });
             }
             Tool::Step => {

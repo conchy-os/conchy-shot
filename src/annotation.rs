@@ -379,6 +379,69 @@ fn paint_arrow(
     Ok(())
 }
 
+/// Renders real-time mosaic pixelation of a subregion directly from the screen surface.
+pub fn paint_pixelate_region(
+    cr: &Context,
+    bg_surface: &cairo::ImageSurface,
+    rect: Rect,
+    cell_size: i32,
+) -> Result<(), cairo::Error> {
+    let bounds = Rect::new(0, 0, bg_surface.width(), bg_surface.height());
+    let Some(clipped) = rect.intersection(&bounds) else {
+        return Ok(());
+    };
+    if clipped.width <= 1 || clipped.height <= 1 {
+        return Ok(());
+    }
+
+    let block = (cell_size.max(4) as f64).clamp(6.0, 32.0);
+    let rx = clipped.x as f64;
+    let ry = clipped.y as f64;
+    let rw = clipped.width as f64;
+    let rh = clipped.height as f64;
+
+    let small_w = ((rw / block).ceil() as i32).max(1);
+    let small_h = ((rh / block).ceil() as i32).max(1);
+
+    // Downscale the region into miniature surface
+    let small_surf = cairo::ImageSurface::create(cairo::Format::ARgb32, small_w, small_h)?;
+    {
+        let scr = Context::new(&small_surf)?;
+        scr.scale(1.0 / block, 1.0 / block);
+        scr.set_source_surface(bg_surface, -rx, -ry)?;
+        scr.paint()?;
+    }
+
+    cr.save()?;
+    cr.rectangle(rx, ry, rw, rh);
+    cr.clip();
+
+    // Upscale with Nearest-Neighbor interpolation (pure chunky mosaic pixelation)
+    let pattern = cairo::SurfacePattern::create(&small_surf);
+    pattern.set_filter(cairo::Filter::Nearest);
+    let matrix = cairo::Matrix::new(
+        1.0 / block,
+        0.0,
+        0.0,
+        1.0 / block,
+        -rx / block,
+        -ry / block,
+    );
+    pattern.set_matrix(matrix);
+
+    cr.set_source(&pattern)?;
+    cr.paint()?;
+
+    // Subtle outline indicator
+    cr.set_source_rgba(0.4, 0.6, 1.0, 0.4);
+    cr.set_line_width(1.0);
+    cr.rectangle(rx + 0.5, ry + 0.5, rw - 1.0, rh - 1.0);
+    cr.stroke()?;
+
+    cr.restore()?;
+    Ok(())
+}
+
 /// Applies pixelation directly to an image buffer within a bounding box.
 pub fn apply_pixelate(img: &mut image::RgbaImage, rect: Rect, block_size: u32) {
     let block = block_size.max(4);
@@ -389,6 +452,10 @@ pub fn apply_pixelate(img: &mut image::RgbaImage, rect: Rect, block_size: u32) {
     let y0 = rect.y.clamp(0, img_h) as u32;
     let x1 = rect.right().clamp(0, img_w) as u32;
     let y1 = rect.bottom().clamp(0, img_h) as u32;
+
+    if x0 >= x1 || y0 >= y1 {
+        return;
+    }
 
     for by in (y0..y1).step_by(block as usize) {
         for bx in (x0..x1).step_by(block as usize) {

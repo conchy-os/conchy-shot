@@ -17,7 +17,7 @@ use wgpu::util::DeviceExt;
 use crate::{
     geometry::{Rect, Size},
     render::{
-        dimensions_label_position, paint_background, paint_dimensions, paint_masks_and_border,
+        dimensions_label_position, paint_dimensions, paint_masks_and_border,
         paint_panel, panel_location, render_dimensions_label, DIMENSIONS_MAX_HEIGHT,
         DIMENSIONS_MAX_WIDTH, HANDLE_SIZE, PanelAssets, PixelSurface,
     },
@@ -85,6 +85,17 @@ struct ShmOutput {
     pool: SlotPool,
     with_pointer: PixelSurface,
     without_pointer: PixelSurface,
+    bg_surface_with: cairo::ImageSurface,
+    bg_surface_without: cairo::ImageSurface,
+}
+
+fn create_image_surface_from_pixel_surface(ps: &PixelSurface) -> Result<cairo::ImageSurface> {
+    let mut image = cairo::ImageSurface::create(cairo::Format::ARgb32, ps.width, ps.height)?;
+    {
+        let mut data = image.data()?;
+        data.copy_from_slice(&ps.data);
+    }
+    Ok(image)
 }
 
 impl ShmRenderer {
@@ -92,6 +103,8 @@ impl ShmRenderer {
         let mut renderer_outputs = Vec::with_capacity(outputs.len());
         for output in outputs {
             output.wl_surface.set_buffer_scale(1);
+            let bg_with = create_image_surface_from_pixel_surface(&output.with_pointer)?;
+            let bg_without = create_image_surface_from_pixel_surface(&output.without_pointer)?;
             renderer_outputs.push(ShmOutput {
                 wl_surface: output.wl_surface,
                 logical_size: output.logical_size,
@@ -103,6 +116,8 @@ impl ShmRenderer {
                 .context("failed to create shm pool")?,
                 with_pointer: output.with_pointer,
                 without_pointer: output.without_pointer,
+                bg_surface_with: bg_with,
+                bg_surface_without: bg_without,
             });
         }
 
@@ -144,12 +159,24 @@ impl ShmRenderer {
                 cairo::ImageSurface::create(cairo::Format::ARgb32, width as i32, height as i32)?;
             {
                 let cr = cairo::Context::new(&surface)?;
-                let screenshot = if model.show_pointer {
-                    &mut output.with_pointer
+                let bg_surface = if model.show_pointer {
+                    &output.bg_surface_with
                 } else {
-                    &mut output.without_pointer
+                    &output.bg_surface_without
                 };
-                paint_background(&cr, screenshot, output.logical_size)?;
+
+                // 1. Draw clean background
+                cr.set_source_surface(bg_surface, 0.0, 0.0)?;
+                cr.paint()?;
+
+                // 2. Real-time Pixelate / Blur annotations applied directly to the background!
+                for ann in model.annotations_on_output(index) {
+                    if let crate::annotation::Annotation::Blur { rect, cell_size } = ann {
+                        let _ = crate::annotation::paint_pixelate_region(&cr, bg_surface, rect, cell_size);
+                    }
+                }
+
+                // 3. Draw masks outside selection and selection border
                 paint_masks_and_border(&cr, output.logical_size, model.selection_on_output(index), &self.theme)?;
 
                 let panel = if model.show_pointer {
@@ -165,10 +192,14 @@ impl ShmRenderer {
                     paint_dimensions(&cr, &label, sel, output.logical_size)?;
                 }
 
+                // 4. Draw vector annotations (arrows, rects, pencil, step markers, text)
                 for ann in model.annotations_on_output(index) {
-                    let _ = ann.paint(&cr);
+                    if !matches!(ann, crate::annotation::Annotation::Blur { .. }) {
+                        let _ = ann.paint(&cr);
+                    }
                 }
 
+                // 5. Draw Ring Menu
                 if index == model.selected_output_index() {
                     if let Some(ring) = &model.ring_menu {
                         let _ = ring.paint(&cr, &self.theme, model.active_tool, model.current_color);
