@@ -174,34 +174,168 @@ impl RingMenu {
             }
             cr.stroke()?;
 
-            // Button Icon
-            if btn.action == RingAction::CycleColor {
-                cr.set_source_rgba(current_color[0], current_color[1], current_color[2], 1.0);
-                cr.arc(cx, cy, 7.0, 0.0, TAU);
-                cr.fill_preserve()?;
-                cr.set_source_rgba(1.0, 1.0, 1.0, 0.8);
-                cr.set_line_width(1.0);
-                cr.stroke()?;
-            } else {
-                if is_active_tool {
-                    cr.set_source_rgba(0.05, 0.05, 0.08, 1.0);
-                } else {
-                    cr.set_source_rgba(0.92, 0.94, 0.98, 1.0);
-                }
-                cr.select_font_face("sans-serif", cairo::FontSlant::Normal, cairo::FontWeight::Bold);
-                cr.set_font_size(14.0);
-                let extents = cr.text_extents(btn.icon)?;
-                cr.move_to(
-                    cx - extents.width() / 2.0 - extents.x_bearing(),
-                    cy - extents.height() / 2.0 - extents.y_bearing(),
-                );
-                cr.show_text(btn.icon)?;
-            }
+            // Paint clean vector icon (no emoji/font dependency)
+            paint_vector_icon(cr, btn.action, cx, cy, is_active_tool, current_color)?;
         }
 
         cr.restore()?;
         Ok(())
     }
+}
+
+fn paint_vector_icon(
+    cr: &Context,
+    action: RingAction,
+    cx: f64,
+    cy: f64,
+    is_active: bool,
+    color: [f64; 4],
+) -> Result<(), cairo::Error> {
+    cr.save()?;
+    if is_active {
+        cr.set_source_rgba(0.05, 0.05, 0.08, 1.0);
+    } else {
+        cr.set_source_rgba(0.92, 0.94, 0.98, 1.0);
+    }
+    cr.set_line_width(1.6);
+    cr.set_line_cap(cairo::LineCap::Round);
+    cr.set_line_join(cairo::LineJoin::Round);
+
+    match action {
+        RingAction::SelectTool(Tool::Select) => {
+            cr.move_to(cx - 5.0, cy - 7.0);
+            cr.line_to(cx - 5.0, cy + 6.0);
+            cr.line_to(cx - 1.5, cy + 2.5);
+            cr.line_to(cx + 4.0, cy + 7.5);
+            cr.line_to(cx + 6.0, cy + 5.5);
+            cr.line_to(cx + 0.5, cy + 0.5);
+            cr.line_to(cx + 4.5, cy - 0.5);
+            cr.close_path();
+            cr.fill_preserve()?;
+            cr.set_line_width(1.0);
+            cr.stroke()?;
+        }
+        RingAction::SelectTool(Tool::Arrow) => {
+            cr.move_to(cx - 6.0, cy + 6.0);
+            cr.line_to(cx + 5.0, cy - 5.0);
+            cr.stroke()?;
+            cr.move_to(cx + 5.0, cy - 1.0);
+            cr.line_to(cx + 5.0, cy - 5.0);
+            cr.line_to(cx + 1.0, cy - 5.0);
+            cr.stroke()?;
+        }
+        RingAction::SelectTool(Tool::Rect) => {
+            cr.rectangle(cx - 6.0, cy - 5.0, 12.0, 10.0);
+            cr.stroke()?;
+        }
+        RingAction::SelectTool(Tool::Pencil) => {
+            cr.move_to(cx - 5.0, cy + 5.0);
+            cr.line_to(cx - 5.0, cy + 2.0);
+            cr.line_to(cx + 2.0, cy - 5.0);
+            cr.line_to(cx + 5.0, cy - 2.0);
+            cr.line_to(cx - 2.0, cy + 5.0);
+            cr.close_path();
+            cr.stroke()?;
+            cr.move_to(cx - 5.0, cy + 5.0);
+            cr.line_to(cx - 4.0, cy + 2.0);
+            cr.line_to(cx - 2.0, cy + 4.0);
+            cr.close_path();
+            cr.fill()?;
+        }
+        RingAction::SelectTool(Tool::Blur) => {
+            let s = 3.5;
+            let gap = 1.0;
+            cr.rectangle(cx - s - gap, cy - s - gap, s, s);
+            cr.rectangle(cx + gap, cy + gap, s, s);
+            cr.fill()?;
+            cr.set_line_width(1.0);
+            cr.rectangle(cx + gap, cy - s - gap, s, s);
+            cr.rectangle(cx - s - gap, cy + gap, s, s);
+            cr.stroke()?;
+        }
+        RingAction::SelectTool(Tool::Step) => {
+            cr.set_line_width(1.4);
+            cr.arc(cx, cy, 7.5, 0.0, TAU);
+            cr.stroke()?;
+            cr.select_font_face("sans-serif", cairo::FontSlant::Normal, cairo::FontWeight::Bold);
+            cr.set_font_size(10.0);
+            let ext = cr.text_extents("1")?;
+            cr.move_to(
+                cx - ext.width() / 2.0 - ext.x_bearing(),
+                cy - ext.height() / 2.0 - ext.y_bearing(),
+            );
+            cr.show_text("1")?;
+        }
+        RingAction::SelectTool(Tool::Text) => {
+            cr.move_to(cx - 5.5, cy - 6.0);
+            cr.line_to(cx + 5.5, cy - 6.0);
+            cr.stroke()?;
+            cr.move_to(cx, cy - 6.0);
+            cr.line_to(cx, cy + 6.0);
+            cr.stroke()?;
+        }
+        RingAction::Undo => {
+            cr.arc(cx + 1.0, cy + 1.0, 5.0, -PI * 0.7, PI * 0.5);
+            cr.stroke()?;
+            cr.move_to(cx - 5.0, cy - 1.5);
+            cr.line_to(cx - 3.0, cy - 5.5);
+            cr.line_to(cx - 0.5, cy - 3.5);
+            cr.stroke()?;
+        }
+        RingAction::CycleColor => {
+            cr.set_source_rgba(color[0], color[1], color[2], 1.0);
+            cr.arc(cx, cy, 6.5, 0.0, TAU);
+            cr.fill_preserve()?;
+            cr.set_source_rgba(1.0, 1.0, 1.0, 0.8);
+            cr.set_line_width(1.2);
+            cr.stroke()?;
+        }
+        RingAction::Copy => {
+            cr.set_line_width(1.2);
+            cr.rectangle(cx - 6.0, cy - 6.0, 8.0, 9.0);
+            cr.stroke()?;
+            if is_active {
+                cr.set_source_rgba(0.9, 0.9, 0.9, 1.0);
+            } else {
+                cr.set_source_rgba(0.16, 0.17, 0.24, 1.0);
+            }
+            cr.rectangle(cx - 2.5, cy - 2.5, 8.0, 9.0);
+            cr.fill_preserve()?;
+            if is_active {
+                cr.set_source_rgba(0.05, 0.05, 0.08, 1.0);
+            } else {
+                cr.set_source_rgba(0.92, 0.94, 0.98, 1.0);
+            }
+            cr.stroke()?;
+        }
+        RingAction::Save => {
+            cr.set_line_width(1.4);
+            cr.move_to(cx - 6.0, cy + 2.0);
+            cr.line_to(cx - 6.0, cy + 6.0);
+            cr.line_to(cx + 6.0, cy + 6.0);
+            cr.line_to(cx + 6.0, cy + 2.0);
+            cr.stroke()?;
+            cr.move_to(cx, cy - 6.0);
+            cr.line_to(cx, cy + 2.5);
+            cr.stroke()?;
+            cr.move_to(cx - 3.5, cy - 0.5);
+            cr.line_to(cx, cy + 3.0);
+            cr.line_to(cx + 3.5, cy - 0.5);
+            cr.stroke()?;
+        }
+        RingAction::Cancel => {
+            cr.set_line_width(1.8);
+            cr.move_to(cx - 4.5, cy - 4.5);
+            cr.line_to(cx + 4.5, cy + 4.5);
+            cr.stroke()?;
+            cr.move_to(cx + 4.5, cy - 4.5);
+            cr.line_to(cx - 4.5, cy + 4.5);
+            cr.stroke()?;
+        }
+    }
+
+    cr.restore()?;
+    Ok(())
 }
 
 fn rounded_rect(cr: &Context, x: f64, y: f64, w: f64, h: f64, r: f64) {

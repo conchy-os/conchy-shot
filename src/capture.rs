@@ -6,8 +6,31 @@ use libwayshot::{
     WayshotConnection,
     region::{LogicalRegion, Position, Region, Size as ShotSize},
 };
+use wayland_client::protocol::wl_output::Transform;
 
 use crate::geometry::Rect;
+
+pub fn apply_output_transform(image: DynamicImage, transform: Transform) -> DynamicImage {
+    match transform {
+        Transform::_90 => image::imageops::rotate90(&image).into(),
+        Transform::_180 => image::imageops::rotate180(&image).into(),
+        Transform::_270 => image::imageops::rotate270(&image).into(),
+        Transform::Flipped => image::imageops::flip_horizontal(&image).into(),
+        Transform::Flipped90 => {
+            let flipped = image::imageops::flip_horizontal(&image);
+            image::imageops::rotate90(&flipped).into()
+        }
+        Transform::Flipped180 => {
+            let flipped = image::imageops::flip_horizontal(&image);
+            image::imageops::rotate180(&flipped).into()
+        }
+        Transform::Flipped270 => {
+            let flipped = image::imageops::flip_horizontal(&image);
+            image::imageops::rotate270(&flipped).into()
+        }
+        _ => image,
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct CaptureOutput {
@@ -48,6 +71,9 @@ impl CaptureBackend {
                 .screenshot_single_output(output, false)
                 .with_context(|| format!("failed to capture output {}", output.name))?;
 
+            let with_pointer = apply_output_transform(with_pointer, output.transform);
+            let without_pointer = apply_output_transform(without_pointer, output.transform);
+
             outputs.push(CaptureOutput {
                 name: output.name.clone(),
                 logical_rect: Rect::new(
@@ -87,10 +113,11 @@ impl CaptureBackend {
                 .find(|output| output.name == name)
                 .with_context(|| format!("unknown output `{name}`"))?;
 
-            return self
+            let image = self
                 .conn
                 .screenshot_single_output(output, show_pointer)
-                .with_context(|| format!("failed to capture output {}", output.name));
+                .with_context(|| format!("failed to capture output {}", output.name))?;
+            return Ok(apply_output_transform(image, output.transform));
         }
 
         let snapshot = self.snapshot()?;
@@ -322,5 +349,13 @@ mod tests {
         let selected = detect_output_under_pointer(&outputs).expect("pointer output");
 
         assert_eq!(selected.name, "DP-1");
+    }
+
+    #[test]
+    fn test_apply_output_transform_90() {
+        let original = DynamicImage::new_rgba8(1920, 1080);
+        let rotated = apply_output_transform(original, Transform::_90);
+        assert_eq!(rotated.width(), 1080);
+        assert_eq!(rotated.height(), 1920);
     }
 }

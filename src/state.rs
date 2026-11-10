@@ -271,14 +271,13 @@ impl SelectionModel {
                 });
             }
             Tool::Step => {
-                let step = Annotation::Step {
+                self.in_progress_annotation = Some(Annotation::Step {
                     center: global_point,
+                    target: Some(global_point),
                     number: self.step_counter,
                     color: self.current_color,
                     radius: 14.0,
-                };
-                self.step_counter += 1;
-                self.annotations.push(step);
+                });
             }
             Tool::Text => {
                 let text = Annotation::Text {
@@ -357,6 +356,9 @@ impl SelectionModel {
                 Some(Annotation::Blur { rect, .. }) => {
                     *rect = Rect::from_corners(self.global_drag_anchor, global_point);
                 }
+                Some(Annotation::Step { target, .. }) => {
+                    *target = Some(global_point);
+                }
                 _ => {}
             }
         }
@@ -405,7 +407,9 @@ impl SelectionModel {
             }
         } else {
             if let Some(ann) = self.in_progress_annotation.take() {
+                self.undo_stack.push(self.annotations.clone());
                 self.annotations.push(ann);
+                self.sync_step_counter();
             }
         }
 
@@ -437,15 +441,24 @@ impl SelectionModel {
     pub fn undo(&mut self) {
         if let Some(prev) = self.undo_stack.pop() {
             self.annotations = prev;
-            if self.step_counter > 1 {
-                self.step_counter -= 1;
-            }
+            self.sync_step_counter();
         } else if !self.annotations.is_empty() {
             self.annotations.pop();
-            if self.step_counter > 1 {
-                self.step_counter -= 1;
-            }
+            self.sync_step_counter();
         }
+    }
+
+    fn sync_step_counter(&mut self) {
+        self.step_counter = self
+            .annotations
+            .iter()
+            .filter_map(|a| match a {
+                Annotation::Step { number, .. } => Some(*number),
+                _ => None,
+            })
+            .max()
+            .map(|m| m + 1)
+            .unwrap_or(1);
     }
 
     pub fn cycle_color(&mut self) {
@@ -602,5 +615,29 @@ mod tests {
 
         model.undo();
         assert_eq!(model.annotations.len(), 0);
+    }
+
+    #[test]
+    fn step_marker_callout_and_counter_undo() {
+        let mut model = SelectionModel::new(outputs(), 0, true);
+        model.active_tool = Tool::Step;
+        assert!(model.pointer_down(0, Point::new(100, 100), false));
+        assert!(model.in_progress_annotation.is_some());
+        assert!(model.pointer_motion(0, Point::new(150, 150)));
+        assert_eq!(model.pointer_up(0, Point::new(150, 150), false), PointerUpOutcome::Redraw);
+
+        assert_eq!(model.annotations.len(), 1);
+        if let Annotation::Step { number, target, .. } = &model.annotations[0] {
+            assert_eq!(*number, 1);
+            assert_eq!(*target, Some(Point::new(150, 150)));
+        } else {
+            panic!("Expected Annotation::Step");
+        }
+        assert_eq!(model.step_counter, 2);
+
+        // Undo resets counter back to 1
+        model.undo();
+        assert_eq!(model.annotations.len(), 0);
+        assert_eq!(model.step_counter, 1);
     }
 }

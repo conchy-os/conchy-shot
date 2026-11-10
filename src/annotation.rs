@@ -80,6 +80,7 @@ pub enum Annotation {
     },
     Step {
         center: Point,
+        target: Option<Point>,
         number: usize,
         color: [f64; 4],
         radius: f64,
@@ -132,11 +133,13 @@ impl Annotation {
             },
             Annotation::Step {
                 center,
+                target,
                 number,
                 color,
                 radius,
             } => Annotation::Step {
                 center: center.translate(dx, dy),
+                target: target.map(|t| t.translate(dx, dy)),
                 number: *number,
                 color: *color,
                 radius: *radius,
@@ -232,31 +235,79 @@ impl Annotation {
             }
             Annotation::Step {
                 center,
+                target,
                 number,
                 color,
                 radius,
             } => {
                 cr.save()?;
-                // Background circle
-                cr.set_source_rgba(color[0], color[1], color[2], color[3]);
-                cr.arc(center.x as f64, center.y as f64, *radius, 0.0, TAU);
-                cr.fill()?;
+                let cx = center.x as f64;
+                let cy = center.y as f64;
 
-                // Border
-                cr.set_source_rgba(0.0, 0.0, 0.0, 0.6);
+                // Flameshot callout pin / pointer
+                if let Some(target) = target {
+                    let tx = target.x as f64;
+                    let ty = target.y as f64;
+                    let dx = tx - cx;
+                    let dy = ty - cy;
+                    let dist = (dx * dx + dy * dy).sqrt();
+
+                    if dist > *radius * 1.1 {
+                        let nx = -dy / dist;
+                        let ny = dx / dist;
+                        let half_w = *radius * 0.75;
+                        let p1x = cx + nx * half_w;
+                        let p1y = cy + ny * half_w;
+                        let p2x = cx - nx * half_w;
+                        let p2y = cy - ny * half_w;
+
+                        // Callout triangular polygon
+                        cr.set_source_rgba(color[0], color[1], color[2], color[3]);
+                        cr.move_to(p1x, p1y);
+                        cr.line_to(tx, ty);
+                        cr.line_to(p2x, p2y);
+                        cr.close_path();
+                        cr.fill_preserve()?;
+
+                        // Subtle dark border on the callout pointer
+                        cr.set_source_rgba(0.0, 0.0, 0.0, 0.4);
+                        cr.set_line_width(1.0);
+                        cr.stroke()?;
+                    }
+                }
+
+                // Background circle bubble
+                cr.set_source_rgba(color[0], color[1], color[2], color[3]);
+                cr.arc(cx, cy, *radius, 0.0, TAU);
+                cr.fill_preserve()?;
+
+                // Contrast border
+                cr.set_source_rgba(0.0, 0.0, 0.0, 0.4);
                 cr.set_line_width(1.5);
-                cr.arc(center.x as f64, center.y as f64, *radius, 0.0, TAU);
                 cr.stroke()?;
 
-                // Text number inside
+                // Contrast text: white on dark, black on light
+                let luminance = 0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2];
+                if luminance > 0.55 {
+                    cr.set_source_rgba(0.05, 0.05, 0.08, 1.0);
+                } else {
+                    cr.set_source_rgba(1.0, 1.0, 1.0, 1.0);
+                }
+
                 let text = format!("{number}");
-                cr.set_source_rgba(1.0, 1.0, 1.0, 1.0);
                 cr.select_font_face("sans-serif", cairo::FontSlant::Normal, cairo::FontWeight::Bold);
-                cr.set_font_size(radius * 1.2);
+                let font_size = if *number >= 100 {
+                    *radius * 0.95
+                } else if *number >= 10 {
+                    *radius * 1.15
+                } else {
+                    *radius * 1.3
+                };
+                cr.set_font_size(font_size);
                 let extents = cr.text_extents(&text)?;
                 cr.move_to(
-                    center.x as f64 - extents.width() / 2.0 - extents.x_bearing(),
-                    center.y as f64 - extents.height() / 2.0 - extents.y_bearing(),
+                    cx - extents.width() / 2.0 - extents.x_bearing(),
+                    cy - extents.height() / 2.0 - extents.y_bearing(),
                 );
                 cr.show_text(&text)?;
                 cr.restore()?;
