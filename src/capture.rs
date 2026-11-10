@@ -238,33 +238,31 @@ pub fn encode_png(image: &DynamicImage) -> Result<Vec<u8>> {
 }
 
 fn detect_output_under_pointer(outputs: &[CaptureOutput]) -> Result<&CaptureOutput> {
-    let changed_outputs = outputs
-        .iter()
-        .filter(|output| output_changed_when_pointer_toggled(output))
-        .collect::<Vec<_>>();
+    if outputs.is_empty() {
+        bail!("no outputs detected");
+    }
 
-    match changed_outputs.as_slice() {
-        [output] => Ok(*output),
-        [] => bail!(
-            "could not determine which monitor contains the pointer because all output captures were identical; pass `--output` explicitly"
-        ),
-        outputs => {
-            let names = outputs
-                .iter()
-                .map(|output| output.name.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-            bail!(
-                "could not determine which monitor contains the pointer because multiple outputs changed when toggling the cursor: {names}; pass `--output` explicitly"
-            )
+    let mut changed: Vec<(&CaptureOutput, usize)> = outputs
+        .iter()
+        .map(|o| (o, diff_byte_count(o)))
+        .filter(|(_, diff)| *diff > 0)
+        .collect();
+
+    match changed.len() {
+        1 => Ok(changed[0].0),
+        0 => Ok(&outputs[0]),
+        _ => {
+            // Pick output with smallest non-zero difference (closest to pointer size vs entire frame redraw)
+            changed.sort_by_key(|(_, diff)| *diff);
+            Ok(changed[0].0)
         }
     }
 }
 
-fn output_changed_when_pointer_toggled(output: &CaptureOutput) -> bool {
+fn diff_byte_count(output: &CaptureOutput) -> usize {
     let with = output.screenshot_with_pointer.as_bytes();
     let without = output.screenshot_without_pointer.as_bytes();
-    with != without
+    with.iter().zip(without.iter()).filter(|(a, b)| a != b).count()
 }
 
 fn screenshot_variant(output: &CaptureOutput, show_pointer: bool) -> DynamicImage {
